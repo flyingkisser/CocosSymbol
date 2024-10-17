@@ -1,0 +1,64 @@
+{
+  "name": "CocosSymbol",
+  "displayName": "Cocos Symbol Parser",
+  "description": "parse symbols in cocos creator project",
+  "version": "0.0.1",
+  "publisher": "flyingkisser",
+  "author": "flyingkisser",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand::cocos.parse",
+    "onCommand::cocos.goto"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cocos.parse",
+        "title": "cocos parse symbole"
+      },
+      {
+        "command": "cocos.goto",
+        "title": "cocos goto def"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cocos.parse",
+        "key": "ctrl+shift+1",
+        "mac": "cmd+shift+1",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "cocos.goto",
+        "key": "ctrl+d",
+        "mac": "cmd+d",
+        "when": "editorTextFocus"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "_pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.9",
+    "@types/node": "^22.7.5",
+    "@types/vscode": "^1.94.0",
+    "@typescript-eslint/eslint-plugin": "^8.7.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "eslint": "^9.11.1",
+    "typescript": "^5.6.3"
+  }
+}
