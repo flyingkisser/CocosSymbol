@@ -102,7 +102,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
         const word = document.getText(wordRange);
         const lineText = document.lineAt(position.line).text;
-
+		const pattern = new RegExp(`([a-zA-Z_][a-zA-Z0-9_\\.]*\\.)${word}\\b`);
+		const match = lineText.match(pattern);
+		var fullWord='';
+		if(match)
+			fullWord = match[0];
+	
         // Check if the call is made through `this.`
         const isThisReference = lineText.includes(`this.${word}`);
 
@@ -121,7 +126,9 @@ export async function activate(context: vscode.ExtensionContext) {
                 exactParamMatches.push(entry);
             } else if (entry.symbolName === word && entry.paramCount === parameterCount) {
                 exactParamMatches.push(entry);
-            } else if (entry.symbolName === word) {
+            } else if(fullWord && entry.symbolName === fullWord){
+				exactParamMatches.push(entry);
+			} else if (entry.symbolName === word) {
                 otherParamMatches.push(entry);
             } else if (entry.symbolName.endsWith(`.${word}`)) {
                 otherParamMatches.push(entry);
@@ -185,7 +192,7 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
         }
 
-        if (matches.length === 1 || localFileMatchOnce) {
+        if (matches.length === 1 || localFileMatchOnce || exactParamMatches.length === 1) {
             // Directly jump to the location if there's only one match
             const match = matches[0];
             const absoluteFilePath = path.join(rootPath, match.filePath);
