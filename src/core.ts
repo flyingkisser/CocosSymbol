@@ -14,6 +14,7 @@ export interface SymbolEntry {
 export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, symbolEntries: SymbolEntry[], rootPath: string) {
     const recordedProperties = new Set<string>();
     const recordedVariables = new Set<string>(); // Track global variables or outside class variables
+    var symbolMap:any={};
 
     function getClassName(node: ts.ClassLikeDeclaration): string {
         if (node.name) {
@@ -161,6 +162,10 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
     function recordClassDefinition(name: string, start: number) {
         const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
         const relativePath = path.relative(rootPath, filePath);
+        let key=relativePath+name+lineNumber;
+        if(symbolMap[key])
+            return;
+        symbolMap[key]=1;
         symbolEntries.push({ filePath: relativePath, symbolName: name, lineNum: lineNumber, paramCount: 0 });
     }
 
@@ -168,6 +173,10 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
         const fullScope = currentScope.concat(name).join('.');
         const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
         const relativePath = path.relative(rootPath, filePath);
+        let key=relativePath+name+lineNumber;
+        if(symbolMap[key])
+            return;
+        symbolMap[key]=1;
         symbolEntries.push({ filePath: relativePath, symbolName: fullScope, lineNum: lineNumber, paramCount });
     }
 
@@ -175,12 +184,20 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
         const fullScope = currentScope.concat(name).join('.');
         const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
         const relativePath = path.relative(rootPath, filePath);
+        let key=relativePath+name+lineNumber;
+        if(symbolMap[key])
+            return;
+        symbolMap[key]=1;
         symbolEntries.push({ filePath: relativePath, symbolName: fullScope, lineNum: lineNumber, paramCount: 0 });
     }
 
     function recordObjectAssignment(name: string, start: number) {
         const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
         const relativePath = path.relative(rootPath, filePath);
+        let key=relativePath+name+lineNumber;
+        if(symbolMap[key])
+            return;
+        symbolMap[key]=1;
         symbolEntries.push({ filePath: relativePath, symbolName: name, lineNum: lineNumber, paramCount: 0 });
     }
 

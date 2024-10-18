@@ -258,21 +258,251 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     // Determine the object type from the context
-    function determineObjectTypeFromContext(document: vscode.TextDocument, position: vscode.Position): string {
-        for (let i = position.line; i >= 0; i--) {
-            const lineText = document.lineAt(i).text;
-            const variableMatch = lineText.match(/let\s+(\w+)\s*=\s*new\s+([\w.]+)/);
-            if (variableMatch) {
-                const [_, variableName, className] = variableMatch;
-                if (lineText.includes(variableName)) {
-                    return className.split('.').pop() || '';
-                }
-            }
-        }
-        return '';
-    }
+	// function determineObjectTypeFromContext(document: vscode.TextDocument, position: vscode.Position): string {
+	// 	var lineText = document.lineAt(position).text.substr(0, position.character);
+	// 	const prefixMatch = lineText.match(/([\w.]+)\.$/);
 
+	// 	if (prefixMatch) {
+	// 		const objectPath = prefixMatch[1];
+	// 		console.log(`Detected object path: ${objectPath}`); // Debug log
+	// 		// If the object path starts with a known namespace, return it directly
+	// 		const matchingSymbol = symbolTable.find(entry => entry.symbolName.startsWith(objectPath));
+	// 		if (matchingSymbol) {
+	// 			let pos=matchingSymbol.symbolName.lastIndexOf('.');
+	// 			if(pos!=-1){
+	// 				let symbolName=matchingSymbol.symbolName.substring(0,pos);
+	// 				console.log(`Matching symbol found: ${symbolName}`); // Debug log
+	// 				return symbolName; // Return the full symbol name
+	// 			}
+	// 			console.log(`Matching symbol found: ${matchingSymbol.symbolName}`); // Debug log
+	// 			return matchingSymbol.symbolName; // Return the full symbol name
+	// 		}
+	// 	}
+
+	// 	const lines = document.getText(new vscode.Range(new vscode.Position(0, 0), position)).split('\n').reverse();
+
+    // 	for (const lineText of lines) {
+	// 		// Match `this._property = new ClassName();`
+	// 		const thisMatch = lineText.match(/this\.(\w+)\s*=\s*new\s+([\w.]+)/);
+	// 		if (thisMatch) {
+	// 			const [, propertyName, className] = thisMatch;
+	// 			if (lineText.includes(propertyName)) {
+	// 				return className;
+	// 			}
+	// 		}
+
+	// 		// Match `let variable = new ClassName();`
+	// 		const variableMatch = lineText.match(/let\s+(\w+)\s*=\s*new\s+([\w.]+)/);
+	// 		if (variableMatch) {
+	// 			const [, variableName, className] = variableMatch;
+	// 			if (lineText.includes(variableName)) {
+	// 				return className;
+	// 			}
+	// 		}
+
+	// 		// Match `var variable = new ClassName();`
+	// 		const match = lineText.match(/var\s+(\w+)\s*=\s*new\s+([\w.]+)/);
+	// 		if (match) {
+	// 			const [, variableName, className] = match;
+	// 			if (lineText.includes(variableName)) {
+	// 				return className;
+	// 			}
+	// 		}
+    // 	}
+    // 	return '';
+	// }
+
+	function determineObjectTypeFromContext(document: vscode.TextDocument, position: vscode.Position): string {
+		const variableTypes = parseVariableTypes(document);
+	
+		const lineText = document.lineAt(position).text.substr(0, position.character);
+		const prefixMatch = lineText.match(/([\w.]+)\.$/);
+	
+		if (prefixMatch) {
+			const objectPath = prefixMatch[1];
+			console.log(`Detected object path: ${objectPath}`); // Debug log
+	
+			// Check if the objectPath is a known variable
+			if (variableTypes.has(objectPath)) {
+				return variableTypes.get(objectPath)!;
+			}
+	
+			// Check if the object path corresponds to any known symbol in the symbol table
+			const matchingSymbol = symbolTable.find(entry => entry.symbolName.startsWith(objectPath));
+			if (matchingSymbol) {
+				console.log(`Matching symbol found: ${matchingSymbol.filePath}`); // Debug log
+				if(objectPath && matchingSymbol.symbolName.includes(objectPath))
+					return objectPath;
+				console.log(`Matching symbol found: ${matchingSymbol.symbolName}`); // Debug log
+				return matchingSymbol.symbolName;
+			}
+		}
+	
+		return '';
+	}
+	
     context.subscriptions.push(findSymbolDisposable);
+
+
+	// function parseVariableTypes(document: vscode.TextDocument): Map<string, string> {
+	// 	const variableTypes = new Map<string, string>();
+	
+	// 	const text = document.getText();
+	// 	const lines = text.split('\n');
+	
+	// 	lines.forEach(line => {
+	// 		// Match let, var, or const declarations with instantiation
+	// 		const declarationMatch = line.match(/(let|var|const)\s+(\w+)\s*=\s*new\s+([\w.]+)/);
+	// 		if (declarationMatch) {
+	// 			const [, , variableName, className] = declarationMatch;
+	// 			variableTypes.set(variableName, className);
+	// 		}
+	
+	// 		// Match variable assignment from another variable
+	// 		const assignmentMatch = line.match(/(let|var|const)?\s*(\w+)\s*=\s*(\w+);/);
+	// 		if (assignmentMatch) {
+	// 			const [, , variableName, sourceVariable] = assignmentMatch;
+	// 			if (variableTypes.has(sourceVariable)) {
+	// 				const sourceType = variableTypes.get(sourceVariable);
+	// 				variableTypes.set(variableName, sourceType!);
+	// 			}
+	// 		}
+	
+	// 		// Match function parameters and their usage
+	// 		const functionMatch = line.match(/function\s*\w*\(([\w,\s]+)\)/);
+	// 		if (functionMatch) {
+	// 			const params = functionMatch[1].split(',').map(param => param.trim());
+	// 			params.forEach(param => {
+	// 				// Placeholder logic: This part needs more context analysis to determine types
+	// 				// For now, assume any parameter is potentially of any type seen in the file
+	// 				// A real implementation would need more robust context analysis
+	// 				if (!variableTypes.has(param)) {
+	// 					variableTypes.set(param, 'unknown'); // Use 'unknown' as placeholder
+	// 				}
+	// 			});
+	// 		}
+	// 	});
+	
+	// 	return variableTypes;
+	// }
+	
+	function parseVariableTypes(document: vscode.TextDocument): Map<string, string> {
+		const variableTypes = new Map<string, string>();
+		const functionParamsMap = new Map<string, string[]>();
+	
+		const text = document.getText();
+		const lines = text.split('\n');
+	
+		lines.forEach(line => {
+			// Match let, var, or const declarations with instantiation like `let x = new ClassName()`
+			const declarationMatch = line.match(/(let|var|const)\s+(\w+)\s*=\s*new\s+([\w.]+)\(/);
+			if (declarationMatch) {
+				const [, , variableName, className] = declarationMatch;
+				variableTypes.set(variableName, className);
+			}
+	
+			// Match variable assignment from another variable like `let x = y;`
+			const assignmentMatch = line.match(/(let|var|const)?\s*(\w+)\s*=\s*(\w+);/);
+			if (assignmentMatch) {
+				const [, , variableName, sourceVariable] = assignmentMatch;
+				if (variableTypes.has(sourceVariable)) {
+					const sourceType = variableTypes.get(sourceVariable);
+					variableTypes.set(variableName, sourceType!);
+				}
+			}
+	
+			// Match function declarations and arrow functions to extract parameters
+			 // Match function expressions with parameter types
+			 const functionParamMatch = line.match(/function\s*\w*\s*\(([^)]+)\)/);
+			 if (functionParamMatch) {
+				 const paramList = functionParamMatch[1];
+				 const params = paramList.split(',').map(param => param.trim());
+	 
+				 params.forEach(param => {
+					 const paramTypeMatch = param.match(/(\w+)\s*:\s*([\w.]+)/);
+					 if (paramTypeMatch) {
+						 const [, paramName, paramType] = paramTypeMatch;
+						 variableTypes.set(paramName, paramType);
+					 }
+				 });
+			 }
+		});
+	
+		return variableTypes;
+	}
+	
+	// Register completion provider for both JavaScript and TypeScript
+	// 注册代码补全的提示
+    context.subscriptions.push(vscode.languages.registerCompletionItemProvider(
+        [
+            { language: 'javascript', scheme: 'file' },
+            { language: 'typescript', scheme: 'file' },
+            { language: 'javascriptreact', scheme: 'file' },
+            { language: 'typescriptreact', scheme: 'file' }
+        ],
+        {
+			provideCompletionItems(document: vscode.TextDocument, position: vscode.Position){
+				const linePrefix = document.lineAt(position).text.substr(0, position.character);
+				let prefix = '';
+				if (linePrefix.endsWith('.')) {
+					const match = linePrefix.match(/[\w\.]+$/);
+					if (match) {
+						prefix = match[0];
+						console.log(`Detected prefix: ${prefix}`); // Debug log
+					}
+				}
+			
+				const objectType1 = determineObjectTypeFromContext(document, position);
+				console.log(`Determined object1 type: ${objectType1}`); // Debug log
+			
+				if (prefix) {
+					const items = getCompletionItemsForPrefix(prefix, symbolTable, document, position);
+					console.log(`Found ${items.length} completion items for prefix: ${prefix}`); // Debug log
+					if(items.length > 0) return items;
+				}
+			
+				const objectType = determineObjectTypeFromContext(document, position);
+				console.log(`Determined object type: ${objectType}`); // Debug log
+				if (objectType) {
+					const items = getCompletionItemsForObjectType(objectType, symbolTable);
+					console.log(`Found ${items.length} completion items for object type: ${objectType}`); // Debug log
+					return items;
+				}
+			
+				console.log('No completion items found.'); // Debug log
+				return undefined;
+			}
+        }, '.'));
+
+		function getCompletionItemsForPrefix(prefix: string, symbolTable: SymbolEntry[],document: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] {
+			// Only return the portion of the symbol name that follows the prefix
+			const prefixParts = prefix.split('.');
+			const basePrefix = prefixParts.slice(0, -1).join('.') + '.';
+			const searchPrefix = prefixParts[prefixParts.length - 1];
+		
+			// Instead of filtering by basePrefix, check against the determined object type
+			const objectType = determineObjectTypeFromContext(document, position);
+			const objectTypePrefix = objectType + '.';
+		
+			return symbolTable
+				.filter(entry => entry.symbolName.startsWith(objectTypePrefix) && entry.symbolName.includes(searchPrefix))
+				.map(entry => {
+					const fullEntryName = entry.symbolName.replace(objectTypePrefix, '');
+					const label = fullEntryName.startsWith(searchPrefix) ? fullEntryName : searchPrefix + fullEntryName;
+					return new vscode.CompletionItem(label, vscode.CompletionItemKind.Method);
+				});
+		}
+		
+		function getCompletionItemsForObjectType(objectType: string, symbolTable: SymbolEntry[]): vscode.CompletionItem[] {
+			const objectTypePrefix = objectType + '.';
+			return symbolTable
+				.filter(entry => entry.symbolName.startsWith(objectTypePrefix))
+				.map(entry => {
+					const label = entry.symbolName.replace(objectTypePrefix, '');
+					return new vscode.CompletionItem(label, vscode.CompletionItemKind.Method);
+				});
+		}
+
 }
 
 export function deactivate() {}

@@ -13,7 +13,9 @@
   ],
   "activationEvents": [
     "onCommand::cocos.parse",
-    "onCommand::cocos.goto"
+    "onCommand::cocos.goto",
+    "onLanguage:javascript",
+    "onLanguage:typescript"
   ],
   "main": "./out/extension.js",
   "contributes": {
