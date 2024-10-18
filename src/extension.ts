@@ -342,49 +342,6 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 	
     context.subscriptions.push(findSymbolDisposable);
-
-
-	// function parseVariableTypes(document: vscode.TextDocument): Map<string, string> {
-	// 	const variableTypes = new Map<string, string>();
-	
-	// 	const text = document.getText();
-	// 	const lines = text.split('\n');
-	
-	// 	lines.forEach(line => {
-	// 		// Match let, var, or const declarations with instantiation
-	// 		const declarationMatch = line.match(/(let|var|const)\s+(\w+)\s*=\s*new\s+([\w.]+)/);
-	// 		if (declarationMatch) {
-	// 			const [, , variableName, className] = declarationMatch;
-	// 			variableTypes.set(variableName, className);
-	// 		}
-	
-	// 		// Match variable assignment from another variable
-	// 		const assignmentMatch = line.match(/(let|var|const)?\s*(\w+)\s*=\s*(\w+);/);
-	// 		if (assignmentMatch) {
-	// 			const [, , variableName, sourceVariable] = assignmentMatch;
-	// 			if (variableTypes.has(sourceVariable)) {
-	// 				const sourceType = variableTypes.get(sourceVariable);
-	// 				variableTypes.set(variableName, sourceType!);
-	// 			}
-	// 		}
-	
-	// 		// Match function parameters and their usage
-	// 		const functionMatch = line.match(/function\s*\w*\(([\w,\s]+)\)/);
-	// 		if (functionMatch) {
-	// 			const params = functionMatch[1].split(',').map(param => param.trim());
-	// 			params.forEach(param => {
-	// 				// Placeholder logic: This part needs more context analysis to determine types
-	// 				// For now, assume any parameter is potentially of any type seen in the file
-	// 				// A real implementation would need more robust context analysis
-	// 				if (!variableTypes.has(param)) {
-	// 					variableTypes.set(param, 'unknown'); // Use 'unknown' as placeholder
-	// 				}
-	// 			});
-	// 		}
-	// 	});
-	
-	// 	return variableTypes;
-	// }
 	
 	function parseVariableTypes(document: vscode.TextDocument): Map<string, string> {
 		const variableTypes = new Map<string, string>();
@@ -452,8 +409,8 @@ export async function activate(context: vscode.ExtensionContext) {
 					}
 				}
 			
-				const objectType1 = determineObjectTypeFromContext(document, position);
-				console.log(`Determined object1 type: ${objectType1}`); // Debug log
+				// const objectType1 = determineObjectTypeFromContext(document, position);
+				// console.log(`Determined object1 type: ${objectType1}`); // Debug log
 			
 				if (prefix) {
 					const items = getCompletionItemsForPrefix(prefix, symbolTable, document, position);
@@ -485,7 +442,15 @@ export async function activate(context: vscode.ExtensionContext) {
 			const objectTypePrefix = objectType + '.';
 		
 			return symbolTable
-				.filter(entry => entry.symbolName.startsWith(objectTypePrefix) && entry.symbolName.includes(searchPrefix))
+				.filter(entry => {
+					if(!entry.symbolName.startsWith(objectTypePrefix) || (searchPrefix && !entry.symbolName.includes(searchPrefix)))
+						return false;
+					//只返回一级属性
+					let leftPart=entry.symbolName.substr(objectTypePrefix.length);
+					if(leftPart.includes('.'))
+						return false;
+					return true;
+				})
 				.map(entry => {
 					const fullEntryName = entry.symbolName.replace(objectTypePrefix, '');
 					const label = fullEntryName.startsWith(searchPrefix) ? fullEntryName : searchPrefix + fullEntryName;
