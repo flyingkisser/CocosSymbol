@@ -8,6 +8,7 @@ export interface SymbolEntry {
     symbolName: string;
     lineNum: number;
     paramCount: number;
+    paramInfo?: { name: string; type?: string }[]; // Add parameter info
 }
 
 
@@ -51,9 +52,9 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
                     }
                 } else if (ts.isMethodDeclaration(member) && member.name) {
                     const methodName = member.name.getText();
-                    recordFunction(methodName, member.parameters.length, member.getStart(), classScope);
+                    recordFunction(methodName, member.parameters.length, member.getStart(), classScope,member.parameters);
                 } else if (ts.isConstructorDeclaration(member)) {
-                    recordFunction('constructor', member.parameters.length, member.getStart(),classScope);
+                    recordFunction('constructor', member.parameters.length, member.getStart(),classScope,member.parameters);
                 }
             });
         }
@@ -95,7 +96,7 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
             const fullScope = scope.concat(functionName).join('.');
             if (!recordedVariables.has(fullScope)) {
                 recordedVariables.add(fullScope);
-                recordFunction(functionName, node.parameters.length, node.getStart(),scope);
+                recordFunction(functionName, node.parameters.length, node.getStart(),scope,node.parameters);
             }
         } else if (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) {
             if (node.parent && ts.isVariableDeclaration(node.parent) && ts.isIdentifier(node.parent.name)) {
@@ -103,7 +104,7 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
                 const fullScope = scope.concat(functionName).join('.');
                 if (!recordedVariables.has(fullScope)) {
                     recordedVariables.add(fullScope);
-                    recordFunction(functionName, node.parameters.length, node.getStart(),scope);
+                    recordFunction(functionName, node.parameters.length, node.getStart(),scope,node.parameters);
                 }
             }
         }
@@ -118,14 +119,14 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
                 const initializer = property.initializer;
                 if (ts.isFunctionExpression(initializer) || ts.isArrowFunction(initializer)) {
                     const name = (property.name as ts.Identifier).text;
-                    recordFunction(name, initializer.parameters.length, property.getStart(), currentScope);
+                    recordFunction(name, initializer.parameters.length, property.getStart(), currentScope,initializer.parameters);
                 } else if (ts.isObjectLiteralExpression(initializer)) {
                     const name = (property.name as ts.Identifier).text;
                     parseObjectLiteral(name, initializer, currentScope);
                 }
             } else if (ts.isMethodDeclaration(property)) {
                 const name = property.name.getText();
-                recordFunction(name, property.parameters.length, property.getStart(), currentScope);
+                recordFunction(name, property.parameters.length, property.getStart(), currentScope,property.parameters);
             }
         });
     }
@@ -136,9 +137,9 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
         node.members.forEach(member => {
             if (ts.isMethodDeclaration(member) && member.name) {
                 const name = member.name.getText();
-                recordFunction(name, member.parameters.length, member.getStart(), currentScope);
+                recordFunction(name, member.parameters.length, member.getStart(), currentScope,member.parameters);
             } else if (ts.isConstructorDeclaration(member)) {
-                recordFunction('constructor', member.parameters.length, member.getStart(), currentScope);
+                recordFunction('constructor', member.parameters.length, member.getStart(), currentScope,member.parameters);
             } else if (ts.isPropertyDeclaration(member) && member.name) {
                 const propertyName = member.name.getText();
                 recordProperty(propertyName, member.getStart(), currentScope);
@@ -169,15 +170,34 @@ export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, sym
         symbolEntries.push({ filePath: relativePath, symbolName: name, lineNum: lineNumber, paramCount: 0 });
     }
 
-    function recordFunction(name: string, paramCount: number, start: number, currentScope: string[]) {
+    // function recordFunction(name: string, paramCount: number, start: number, currentScope: string[]) {
+    //     const fullScope = currentScope.concat(name).join('.');
+    //     const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
+    //     const relativePath = path.relative(rootPath, filePath);
+    //     let key=relativePath+name+lineNumber;
+    //     if(symbolMap[key])
+    //         return;
+    //     symbolMap[key]=1;
+    //     symbolEntries.push({ filePath: relativePath, symbolName: fullScope, lineNum: lineNumber, paramCount });
+    // }
+    function recordFunction(name: string, paramCount: number, start: number, currentScope: string[], parameters: ts.NodeArray<ts.ParameterDeclaration>) {
         const fullScope = currentScope.concat(name).join('.');
         const lineNumber = sourceFile.getLineAndCharacterOfPosition(start).line + 1;
         const relativePath = path.relative(rootPath, filePath);
-        let key=relativePath+name+lineNumber;
-        if(symbolMap[key])
+    
+        // Extract parameter names and types
+        const paramInfo = parameters.map(param => {
+            const paramName = (param.name as ts.Identifier).text;
+            const paramType = param.type ? param.type.getText() : undefined;
+            return { name: paramName, type: paramType };
+        });
+    
+        let key = relativePath + name + lineNumber;
+        if (symbolMap[key])
             return;
-        symbolMap[key]=1;
-        symbolEntries.push({ filePath: relativePath, symbolName: fullScope, lineNum: lineNumber, paramCount });
+        symbolMap[key] = 1;
+     
+        symbolEntries.push({ filePath: relativePath, symbolName: fullScope, lineNum: lineNumber, paramCount, paramInfo });
     }
 
     function recordProperty(name: string, start: number, currentScope: string[]) {
@@ -220,9 +240,19 @@ export async function updateSymbolsForFile(filePath: string, symbolTable: Symbol
     symbolTable.length = 0;
     symbolTable.push(...updatedSymbolTable);
 
-    const newSymbolData = updatedSymbolTable
-        .map(entry => `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount}`)
-        .join('\n');
+    // const newSymbolData = updatedSymbolTable
+    //     .map(entry => `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount}`)
+    //     .join('\n');
+	const newSymbolData = updatedSymbolTable
+		.map(entry => {
+			const paramInfoStr = entry.paramInfo
+				? entry.paramInfo.map(param => `${param.name}:${param.type || 'unknown'}`).join(';')
+				: '';
+                if(!entry.symbolName)
+                    entry.symbolName='';
+			return `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount},${paramInfoStr}`;
+		})
+		.join('\n');        
     fs.writeFileSync(path.join(rootPath, 'symbols.index'), newSymbolData, 'utf-8');
 }
 
@@ -233,8 +263,17 @@ export function removeSymbolsForFile(filePath: string, symbolTable: SymbolEntry[
     symbolTable.length = 0;
     symbolTable.push(...updatedSymbolTable);
 
+    // const newSymbolData = updatedSymbolTable
+    //     .map(entry => `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount}`)
+    //     .join('\n');
     const newSymbolData = updatedSymbolTable
-        .map(entry => `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount}`)
-        .join('\n');
-    fs.writeFileSync(path.join(rootPath, 'symbols.index'), newSymbolData, 'utf-8');
+		.map(entry => {
+			const paramInfoStr = entry.paramInfo
+				? entry.paramInfo.map(param => `${param.name}:${param.type || 'unknown'}`).join(';')
+				: '';
+                if(!entry.symbolName)
+                    entry.symbolName='';
+			return `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount},${paramInfoStr}`;
+		})
+		.join('\n');        fs.writeFileSync(path.join(rootPath, 'symbols.index'), newSymbolData, 'utf-8');
 }

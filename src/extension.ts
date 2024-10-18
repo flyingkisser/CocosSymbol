@@ -22,10 +22,26 @@ export async function activate(context: vscode.ExtensionContext) {
         symbolTable.length = 0;
         for (const line of lines) {
             if (line.trim() === '') continue;
-            const [filePath, symbolName, lineNum, paramCount] = line.split(',');
-            symbolTable.push({ filePath, symbolName, lineNum: parseInt(lineNum), paramCount: parseInt(paramCount) });
-        }
-    }
+            const [filePath, symbolName, lineNum, paramCount, paramInfoStr=''] = line.split(',');
+            // symbolTable.push({ filePath, symbolName, lineNum: parseInt(lineNum), paramCount: parseInt(paramCount), paramInfo: paramInfo ? JSON.parse(paramInfo) : null });
+			const paramInfo = paramInfoStr
+            ? paramInfoStr.split(';').map(paramStr => {
+                const [name, type] = paramStr.split(':');
+                return { name, type: type === 'unknown' ? undefined : type };
+            })
+            : [];
+
+        // Push the entry into the symbol table
+			symbolTable.push({
+				filePath,
+				symbolName,
+				lineNum: parseInt(lineNum, 10),
+				paramCount: parseInt(paramCount, 10),
+				paramInfo
+			});
+    	}
+     }
+    
 
     async function parseWorkspace() {
         if (!workspaceFolder) {
@@ -60,9 +76,16 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         });
 
-        const newSymbolData = newSymbolTable
-            .map(entry => `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount}`)
-            .join('\n');
+		const newSymbolData = newSymbolTable
+		.map(entry => {
+			var paramInfoStr = entry.paramInfo
+				? entry.paramInfo.map(param => `${param.name}:${param.type || 'unknown'}`).join(';')
+				: '';
+				//get rid of \n\r in paramInfoStr
+				paramInfoStr = paramInfoStr.replace(/[\n\r]/g, '');
+			return `${entry.filePath},${entry.symbolName},${entry.lineNum},${entry.paramCount},${paramInfoStr}`;
+		})
+		.join('\n');
         fs.writeFileSync(symbolIndexPath, newSymbolData, 'utf-8');
         vscode.window.showInformationMessage('Symbols indexed successfully!');
 
@@ -120,8 +143,10 @@ export async function activate(context: vscode.ExtensionContext) {
         // Collect matches with exact parameter count and others
         const exactParamMatches: SymbolEntry[] = [];
         const otherParamMatches: SymbolEntry[] = [];
-
+		
         for (const entry of symbolTable) {
+			if(!entry.symbolName)
+				continue;
             if (isThisReference && currentClassName && entry.symbolName.startsWith(`${currentClassName}.`) && entry.symbolName.endsWith(`.${word}`)) {
                 exactParamMatches.push(entry);
             } else if (entry.symbolName === word && entry.paramCount === parameterCount) {
@@ -257,61 +282,6 @@ export async function activate(context: vscode.ExtensionContext) {
         return null;
     }
 
-    // Determine the object type from the context
-	// function determineObjectTypeFromContext(document: vscode.TextDocument, position: vscode.Position): string {
-	// 	var lineText = document.lineAt(position).text.substr(0, position.character);
-	// 	const prefixMatch = lineText.match(/([\w.]+)\.$/);
-
-	// 	if (prefixMatch) {
-	// 		const objectPath = prefixMatch[1];
-	// 		console.log(`Detected object path: ${objectPath}`); // Debug log
-	// 		// If the object path starts with a known namespace, return it directly
-	// 		const matchingSymbol = symbolTable.find(entry => entry.symbolName.startsWith(objectPath));
-	// 		if (matchingSymbol) {
-	// 			let pos=matchingSymbol.symbolName.lastIndexOf('.');
-	// 			if(pos!=-1){
-	// 				let symbolName=matchingSymbol.symbolName.substring(0,pos);
-	// 				console.log(`Matching symbol found: ${symbolName}`); // Debug log
-	// 				return symbolName; // Return the full symbol name
-	// 			}
-	// 			console.log(`Matching symbol found: ${matchingSymbol.symbolName}`); // Debug log
-	// 			return matchingSymbol.symbolName; // Return the full symbol name
-	// 		}
-	// 	}
-
-	// 	const lines = document.getText(new vscode.Range(new vscode.Position(0, 0), position)).split('\n').reverse();
-
-    // 	for (const lineText of lines) {
-	// 		// Match `this._property = new ClassName();`
-	// 		const thisMatch = lineText.match(/this\.(\w+)\s*=\s*new\s+([\w.]+)/);
-	// 		if (thisMatch) {
-	// 			const [, propertyName, className] = thisMatch;
-	// 			if (lineText.includes(propertyName)) {
-	// 				return className;
-	// 			}
-	// 		}
-
-	// 		// Match `let variable = new ClassName();`
-	// 		const variableMatch = lineText.match(/let\s+(\w+)\s*=\s*new\s+([\w.]+)/);
-	// 		if (variableMatch) {
-	// 			const [, variableName, className] = variableMatch;
-	// 			if (lineText.includes(variableName)) {
-	// 				return className;
-	// 			}
-	// 		}
-
-	// 		// Match `var variable = new ClassName();`
-	// 		const match = lineText.match(/var\s+(\w+)\s*=\s*new\s+([\w.]+)/);
-	// 		if (match) {
-	// 			const [, variableName, className] = match;
-	// 			if (lineText.includes(variableName)) {
-	// 				return className;
-	// 			}
-	// 		}
-    // 	}
-    // 	return '';
-	// }
-
 	function determineObjectTypeFromContext(document: vscode.TextDocument, position: vscode.Position): string {
 		const variableTypes = parseVariableTypes(document);
 	
@@ -328,7 +298,11 @@ export async function activate(context: vscode.ExtensionContext) {
 			}
 	
 			// Check if the object path corresponds to any known symbol in the symbol table
-			const matchingSymbol = symbolTable.find(entry => entry.symbolName.startsWith(objectPath));
+			const matchingSymbol = symbolTable.find(entry =>{
+				if(!entry.symbolName)
+					return false
+				return entry.symbolName.startsWith(objectPath)
+			});
 			if (matchingSymbol) {
 				console.log(`Matching symbol found: ${matchingSymbol.filePath}`); // Debug log
 				if(objectPath && matchingSymbol.symbolName.includes(objectPath))
@@ -409,9 +383,6 @@ export async function activate(context: vscode.ExtensionContext) {
 					}
 				}
 			
-				// const objectType1 = determineObjectTypeFromContext(document, position);
-				// console.log(`Determined object1 type: ${objectType1}`); // Debug log
-			
 				if (prefix) {
 					const items = getCompletionItemsForPrefix(prefix, symbolTable, document, position);
 					console.log(`Found ${items.length} completion items for prefix: ${prefix}`); // Debug log
@@ -464,9 +435,66 @@ export async function activate(context: vscode.ExtensionContext) {
 				.filter(entry => entry.symbolName.startsWith(objectTypePrefix))
 				.map(entry => {
 					const label = entry.symbolName.replace(objectTypePrefix, '');
-					return new vscode.CompletionItem(label, vscode.CompletionItemKind.Method);
+					const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Method);
+		
+					// Add parameter info as detail
+					if (entry.paramInfo && entry.paramInfo.length > 0) {
+						const params = entry.paramInfo.map(p => p.type ? `${p.name}: ${p.type}` : p.name).join(', ');
+						item.detail = `(${params})`;
+					}
+					
+					return item;
 				});
 		}
+
+	// 注册SignatureHelpProvider
+	context.subscriptions.push(vscode.languages.registerSignatureHelpProvider(
+    [
+        { language: 'javascript', scheme: 'file' },
+        { language: 'typescript', scheme: 'file' }
+    ],
+    {
+        provideSignatureHelp(document: vscode.TextDocument, position: vscode.Position): vscode.SignatureHelp | null {
+            const lineText = document.lineAt(position.line).text;
+			// const prefixMatch = lineText.substr(0, position.character).match(/(\w+)\.(\w+)\s*\($/);
+			// var prefixMatch = lineText.substr(0, position.character).match(/(\w+)\.(\w+)\s*\(([^)]*)$/);
+			// var prefixMatch = lineText.substr(0, position.character).match(/(\w+(?:\.\w+)*)\.(\w+)\s*\(([^)]*)$/);
+			// var prefixMatch=  lineText.substr(0, position.character).match(/(\w+(?:\.\w+)*)\.(\w+)\s*\(([^)]*)$/);
+			var prefixMatch = lineText.substr(0, position.character).match(/(\w+(?:\.\w+)*)\.(\w+)\s*\((.*)$/);
+
+			if (!prefixMatch) return null;
+		
+			var [_, variableName, methodName,args] = prefixMatch;
+			var variableTypes = parseVariableTypes(document);
+			var variableType = variableTypes.get(variableName);
+			if (!variableType) {
+				// prefixMatch = lineText.substr(0, position.character).match(/(\w+(?:\.\w+)*)\.(\w+)\s*\(([^)]*)$/);
+				prefixMatch = lineText.substr(0, position.character).match(/(\w+(?:\.\w+)*)\.(\w+)\s*\((.*)$/);
+				if (!prefixMatch) return null;
+				[_, variableType, methodName, args] = prefixMatch;
+			}
+		
+			var methodFullName = `${variableType}.${methodName}`;
+			var symbolEntry = symbolTable.find(entry => entry.symbolName === methodFullName);
+
+            if (symbolEntry && symbolEntry.paramInfo) {
+                const signature = new vscode.SignatureInformation(`${methodName}(${symbolEntry.paramInfo.map(p => p.type ? `${p.name}: ${p.type}` : p.name).join(', ')})`);
+                signature.parameters = symbolEntry.paramInfo.map(p => new vscode.ParameterInformation(p.name));
+
+                const signatureHelp = new vscode.SignatureHelp();
+                signatureHelp.signatures = [signature];
+                signatureHelp.activeSignature = 0;
+               // Determine the active parameter based on the number of commas
+				const activeParameter = args.split(',').length - 1;
+				signatureHelp.activeParameter = Math.min(activeParameter, symbolEntry.paramInfo.length - 1);
+
+                return signatureHelp;
+            }
+
+            return null;
+        }
+    }, '(', ',' // 触发提示的字符	
+	));
 
 }
 
