@@ -11,6 +11,19 @@ export interface SymbolEntry {
     paramInfo?: { name: string; type?: string }[]; // Add parameter info
 }
 
+export function getClassName(lineText:string):string{
+      // Match against class expressions assigned to a variable or object property
+      const classExpressionMatch = lineText.match(/^([\w.]+)\s*=\s*class\s*(?:extends\s+[\w.]+\s*)?{/);
+      if (classExpressionMatch) {
+        return classExpressionMatch[1] || "";
+      }
+      // Match against direct class declarations
+      const classDeclarationMatch = lineText.match(/^class\s+([\w.]+)/);
+      if (classDeclarationMatch) {
+          return classDeclarationMatch[1] || "";
+      }
+      return "";
+}
 
 export function parseSourceFile(sourceFile: ts.SourceFile, filePath: string, symbolEntries: SymbolEntry[], rootPath: string) {
     const recordedProperties = new Set<string>();
