@@ -290,3 +290,76 @@ export function removeSymbolsForFile(filePath: string, symbolTable: SymbolEntry[
 		})
 		.join('\n');        fs.writeFileSync(path.join(rootPath, 'symbols.index'), newSymbolData, 'utf-8');
 }
+
+export function determineObjectTypeFromContext(document:vscode.TextDocument, position:vscode.Position,symbolTable:SymbolEntry[]):string {
+    const variableTypes = parseVariableTypes(document);
+    const lineText = document.lineAt(position).text.substr(0, position.character);
+    const prefixMatch = lineText.match(/([\w.]+)\.$/);
+    if (prefixMatch) {
+        const objectPath = prefixMatch[1];
+        console.log(`Detected object path: ${objectPath}`); // Debug log
+        // Check if the objectPath is a known variable
+        if (variableTypes.has(objectPath)) {
+            return variableTypes.get(objectPath) || "";
+        }
+        // Check if the object path corresponds to any known symbol in the symbol table
+        const matchingSymbol = symbolTable.find(entry => {
+            if (!entry.symbolName)
+                return false;
+            return entry.symbolName.startsWith(objectPath);
+        });
+        if (matchingSymbol) {
+            console.log(`Matching symbol found: ${matchingSymbol.filePath}`); // Debug log
+            if (objectPath && matchingSymbol.symbolName.includes(objectPath))
+                return objectPath;
+            console.log(`Matching symbol found: ${matchingSymbol.symbolName}`); // Debug log
+            return matchingSymbol.symbolName;
+        }
+    }
+    return '';
+}
+
+export function parseVariableTypes(document: vscode.TextDocument): Map<string, string> {
+    const variableTypes = new Map<string, string>();
+    const functionParamsMap = new Map<string, string[]>();
+
+    const text = document.getText();
+    const lines = text.split('\n');
+
+    lines.forEach(line => {
+        // Match let, var, or const declarations with instantiation like `let x = new ClassName()`
+        const declarationMatch = line.match(/(let|var|const)\s+(\w+)\s*=\s*new\s+([\w.]+)\(/);
+        if (declarationMatch) {
+            const [, , variableName, className] = declarationMatch;
+            variableTypes.set(variableName, className);
+        }
+
+        // Match variable assignment from another variable like `let x = y;`
+        const assignmentMatch = line.match(/(let|var|const)?\s*(\w+)\s*=\s*(\w+);/);
+        if (assignmentMatch) {
+            const [, , variableName, sourceVariable] = assignmentMatch;
+            if (variableTypes.has(sourceVariable)) {
+                const sourceType = variableTypes.get(sourceVariable);
+                variableTypes.set(variableName, sourceType!);
+            }
+        }
+
+        // Match function declarations and arrow functions to extract parameters
+         // Match function expressions with parameter types
+         const functionParamMatch = line.match(/function\s*\w*\s*\(([^)]+)\)/);
+         if (functionParamMatch) {
+             const paramList = functionParamMatch[1];
+             const params = paramList.split(',').map(param => param.trim());
+ 
+             params.forEach(param => {
+                 const paramTypeMatch = param.match(/(\w+)\s*:\s*([\w.]+)/);
+                 if (paramTypeMatch) {
+                     const [, paramName, paramType] = paramTypeMatch;
+                     variableTypes.set(paramName, paramType);
+                 }
+             });
+         }
+    });
+
+    return variableTypes;
+}
