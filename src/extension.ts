@@ -498,8 +498,6 @@ export async function activate(context: vscode.ExtensionContext) {
 	));
 
     //查找符号的引用
-   
-
     const findReferencesCommand = vscode.commands.registerCommand('cocos.findReferences', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {

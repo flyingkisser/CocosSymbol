@@ -80,6 +80,108 @@ export async function findNamespaceAndFunctionAtCursor(editor: vscode.TextEditor
     return null;
 }
 
+// export async function findReferencesInWorkspace(namespace: string, functionName: string) {
+//     const workspaceFolders = vscode.workspace.workspaceFolders;
+
+//     if (!workspaceFolders) {
+//         vscode.window.showWarningMessage('No workspace folder open');
+//         return;
+//     }
+
+//     const references: vscode.Location[] = [];
+//     const currentDocument = vscode.window.activeTextEditor?.document;
+//     const currentFilePath = currentDocument?.uri.fsPath;
+
+//     for (const folder of workspaceFolders) {
+//         const excludePattern = '{**/node_modules/**,temp/*,**/temp/**,**/build/**,**/release/**,**/Release/**,**/debug/**,**/Debug/**,**/simulator/**,**/*.d.ts,**/*.min.js,**/*.asm.js}';
+//         const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.{js,ts}'), excludePattern);
+
+//         for (const file of files) {
+//             const document = await vscode.workspace.openTextDocument(file);
+//             const text = document.getText();
+//             const lines = text.split('\n');
+
+//              // Regular expression to match both namespace.functionName and this.functionName
+//             // const specificCallRegex = new RegExp(`\\b(?:${namespace}\\.|this\\.)${functionName}\\s*\\(`);
+//             const specificCallRegex = new RegExp(`\\b(?:${namespace}\\.|this\\.|\\w+\\.)${functionName}\\s*\\(`);
+
+//             // Track object instances and their types
+//             const instanceMap: { [key: string]: string } = {};
+
+//             if(file.path.indexOf("ui_align")!==-1)
+//                 console.log(file.path);
+
+//             lines.forEach((line, lineNumber) => {
+//                 const trimmedLine = line.trim();
+
+//                 // Attempt to capture object instances
+//                 const instanceMatch = trimmedLine.match(/(?:var|let|const)\s+(\w+)\s*=\s*new\s+([\w.]+)\s*\(/);
+//                 if (instanceMatch) {
+//                     const [_, instanceName, className] = instanceMatch;
+//                     instanceMap[instanceName] = className;
+//                 }
+
+//                 // Track assignments to capture aliasing
+//                 const aliasMatch = trimmedLine.match(/(\w+)\s*=\s*(\w+)\s*;/);
+//                 if (aliasMatch) {
+//                     const [_, aliasName, originalName] = aliasMatch;
+//                     if (instanceMap[originalName]) {
+//                         instanceMap[aliasName] = instanceMap[originalName];
+//                     }
+//                 }
+
+//                 // Check for method calls
+//                 if (specificCallRegex.test(trimmedLine)) {
+//                     const namespaceIndex = trimmedLine.indexOf(`${namespace}.${functionName}`);
+//                     const thisIndex = trimmedLine.indexOf(`this.${functionName}`);
+//                     let objectMethodIndex = -1;
+//                     let objectName = '';
+
+//                     // Check for calls like object.functionName()
+//                     // const objectMethodMatch = trimmedLine.match(/(\w+)\.\b${functionName}\s*\(/);
+//                     const objectMethodMatch = trimmedLine.match(new RegExp(`(\\w+)\\.${functionName}\\s*\\(`));
+//                     if (objectMethodMatch) {
+//                         objectName = objectMethodMatch[1];
+//                         if (instanceMap[objectName] === namespace) {
+//                             objectMethodIndex = trimmedLine.indexOf(`${objectName}.${functionName}`);
+//                         }
+//                     }
+
+//                     // Determine which index to use (if both exist, use the first occurrence)
+//                     const index = namespaceIndex !== -1 ? namespaceIndex : (thisIndex !== -1 ? thisIndex : objectMethodIndex);
+
+//                     if (index !== -1) {
+//                         // If the reference is through "this", ensure it's in the same file
+//                         if (thisIndex !== -1 && file.fsPath !== currentFilePath) {
+//                             // It's a "this" reference but not in the same file, so skip it
+//                             return;
+//                         }
+//                         references.push(new vscode.Location(file, new vscode.Position(lineNumber, index)));
+//                     }
+//                 }
+//             });
+//         }
+//     }
+
+//     if (references.length > 0) {
+//         savedReferences = references; // Save references globally
+//         savedItems = await Promise.all(references.map(async ref => {
+//             const document = await vscode.workspace.openTextDocument(ref.uri);
+//             const lines = document.getText().split('\n');
+//             const relativePath = vscode.workspace.asRelativePath(ref.uri.fsPath);
+//             const lineContent = ref.range.start.line;
+//             return {
+//                 label: `${relativePath} - Line ${lineContent + 1}`,
+//                 description: lines[lineContent].trim(),
+//                 location: ref
+//             };
+//         }));
+//         showQuickPick(savedItems, namespace, functionName);
+//     } else {
+//         vscode.window.showInformationMessage(`No references found for ${namespace}.${functionName}.`);
+//     }
+// }
+
 export async function findReferencesInWorkspace(namespace: string, functionName: string) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
 
@@ -92,76 +194,85 @@ export async function findReferencesInWorkspace(namespace: string, functionName:
     const currentDocument = vscode.window.activeTextEditor?.document;
     const currentFilePath = currentDocument?.uri.fsPath;
 
-    for (const folder of workspaceFolders) {
-        const excludePattern = '{**/node_modules/**,temp/*,**/temp/**,**/build/**,**/release/**,**/Release/**,**/debug/**,**/Debug/**,**/simulator/**,**/*.d.ts,**/*.min.js,**/*.asm.js}';
-        const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.{js,ts}'), excludePattern);
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Searching for ${namespace}.${functionName}`,
+        cancellable: false
+    }, async (progress) => {
+        let totalFiles = 0;
+        let processedFiles = 0;
 
-        for (const file of files) {
-            const document = await vscode.workspace.openTextDocument(file);
-            const text = document.getText();
-            const lines = text.split('\n');
+        for (const folder of workspaceFolders) {
+            const excludePattern = '{**/node_modules/**,temp/*,**/temp/**,**/build/**,**/release/**,**/Release/**,**/debug/**,**/Debug/**,**/simulator/**,**/*.d.ts,**/*.min.js,**/*.asm.js}';
+            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.{js,ts}'), excludePattern);
 
-             // Regular expression to match both namespace.functionName and this.functionName
-            // const specificCallRegex = new RegExp(`\\b(?:${namespace}\\.|this\\.)${functionName}\\s*\\(`);
-            const specificCallRegex = new RegExp(`\\b(?:${namespace}\\.|this\\.|\\w+\\.)${functionName}\\s*\\(`);
+            totalFiles += files.length;
 
-            // Track object instances and their types
-            const instanceMap: { [key: string]: string } = {};
+            await Promise.all(files.map(async (file) => {
+                const document = await vscode.workspace.openTextDocument(file);
+                const text = document.getText();
+                const lines = text.split('\n');
 
-            if(file.path.indexOf("ui_align")!==-1)
-                console.log(file.path);
+                // Regular expression to match anyObject.functionName
+                const specificCallRegex = new RegExp(`\\b(?:${namespace}\\.|this\\.|\\w+\\.)${functionName}\\s*\\(`);
 
-            lines.forEach((line, lineNumber) => {
-                const trimmedLine = line.trim();
+                // Track object instances and their types
+                const instanceMap: { [key: string]: string } = {};
 
-                // Attempt to capture object instances
-                const instanceMatch = trimmedLine.match(/(?:var|let|const)\s+(\w+)\s*=\s*new\s+([\w.]+)\s*\(/);
-                if (instanceMatch) {
-                    const [_, instanceName, className] = instanceMatch;
-                    instanceMap[instanceName] = className;
-                }
+                lines.forEach((line, lineNumber) => {
+                    const trimmedLine = line.trim();
 
-                // Track assignments to capture aliasing
-                const aliasMatch = trimmedLine.match(/(\w+)\s*=\s*(\w+)\s*;/);
-                if (aliasMatch) {
-                    const [_, aliasName, originalName] = aliasMatch;
-                    if (instanceMap[originalName]) {
-                        instanceMap[aliasName] = instanceMap[originalName];
+                    // Attempt to capture object instances
+                    const instanceMatch = trimmedLine.match(/(?:var|let|const)\s+(\w+)\s*=\s*new\s+([\w.]+)\s*\(/);
+                    if (instanceMatch) {
+                        const [_, instanceName, className] = instanceMatch;
+                        instanceMap[instanceName] = className;
                     }
-                }
 
-                // Check for method calls
-                if (specificCallRegex.test(trimmedLine)) {
-                    const namespaceIndex = trimmedLine.indexOf(`${namespace}.${functionName}`);
-                    const thisIndex = trimmedLine.indexOf(`this.${functionName}`);
-                    let objectMethodIndex = -1;
-                    let objectName = '';
-
-                    // Check for calls like object.functionName()
-                    // const objectMethodMatch = trimmedLine.match(/(\w+)\.\b${functionName}\s*\(/);
-                    const objectMethodMatch = trimmedLine.match(new RegExp(`(\\w+)\\.${functionName}\\s*\\(`));
-                    if (objectMethodMatch) {
-                        objectName = objectMethodMatch[1];
-                        if (instanceMap[objectName] === namespace) {
-                            objectMethodIndex = trimmedLine.indexOf(`${objectName}.${functionName}`);
+                    // Track assignments to capture aliasing
+                    const aliasMatch = trimmedLine.match(/(\w+)\s*=\s*(\w+)\s*;/);
+                    if (aliasMatch) {
+                        const [_, aliasName, originalName] = aliasMatch;
+                        if (instanceMap[originalName]) {
+                            instanceMap[aliasName] = instanceMap[originalName];
                         }
                     }
 
-                    // Determine which index to use (if both exist, use the first occurrence)
-                    const index = namespaceIndex !== -1 ? namespaceIndex : (thisIndex !== -1 ? thisIndex : objectMethodIndex);
+                    // Check for method calls
+                    if (specificCallRegex.test(trimmedLine)) {
+                        const namespaceIndex = trimmedLine.indexOf(`${namespace}.${functionName}`);
+                        const thisIndex = trimmedLine.indexOf(`this.${functionName}`);
+                        let objectMethodIndex = -1;
+                        let objectName = '';
 
-                    if (index !== -1) {
-                        // If the reference is through "this", ensure it's in the same file
-                        if (thisIndex !== -1 && file.fsPath !== currentFilePath) {
-                            // It's a "this" reference but not in the same file, so skip it
-                            return;
+                        // Check for calls like object.functionName()
+                        const objectMethodMatch = trimmedLine.match(new RegExp(`(\\w+)\\.${functionName}\\s*\\(`));
+                        if (objectMethodMatch) {
+                            objectName = objectMethodMatch[1];
+                            if (instanceMap[objectName] === namespace) {
+                                objectMethodIndex = trimmedLine.indexOf(`${objectName}.${functionName}`);
+                            }
                         }
-                        references.push(new vscode.Location(file, new vscode.Position(lineNumber, index)));
+
+                        // Determine which index to use (if both exist, use the first occurrence)
+                        const index = namespaceIndex !== -1 ? namespaceIndex : (thisIndex !== -1 ? thisIndex : objectMethodIndex);
+
+                        if (index !== -1) {
+                            // If the reference is through "this", ensure it's in the same file
+                            if (thisIndex !== -1 && file.fsPath !== currentFilePath) {
+                                // It's a "this" reference but not in the same file, so skip it
+                                return;
+                            }
+                            references.push(new vscode.Location(file, new vscode.Position(lineNumber, index)));
+                        }
                     }
-                }
-            });
+                });
+
+                processedFiles++;
+                progress.report({ increment: (processedFiles / totalFiles) * 100, message: `Processed ${processedFiles}/${totalFiles} files` });
+            }));
         }
-    }
+    });
 
     if (references.length > 0) {
         savedReferences = references; // Save references globally
@@ -181,6 +292,7 @@ export async function findReferencesInWorkspace(namespace: string, functionName:
         vscode.window.showInformationMessage(`No references found for ${namespace}.${functionName}.`);
     }
 }
+
 
 export function showQuickPick(items: (vscode.QuickPickItem & { location: vscode.Location })[], namespace: string, functionName: string) {
     const quickPick = vscode.window.createQuickPick();
