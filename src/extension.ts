@@ -3,6 +3,7 @@ import * as ts from 'typescript';
 import * as fs from 'fs';
 import * as path from 'path';
 import { parseSourceFile, SymbolEntry, updateSymbolsForFile, removeSymbolsForFile } from './core';
+import { savedItems, findNamespaceAndFunctionAtCursor, findReferencesInWorkspace, showQuickPick } from './referenceFinder';
 
 export async function activate(context: vscode.ExtensionContext) {
     const symbolTable: SymbolEntry[] = [];
@@ -497,135 +498,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	));
 
     //查找符号的引用
-    let savedReferences: vscode.Location[] = [];
-    let savedItems: (vscode.QuickPickItem & { location: vscode.Location })[] = [];
-    async function findNamespaceAndFunctionAtCursor(editor: vscode.TextEditor): Promise<{ namespace: string, functionName: string } | null> {
-        const document = editor.document;
-        const position = editor.selection.active;
-        const wordRange = document.getWordRangeAtPosition(position, /\w+/);
-    
-        if (!wordRange) {
-            return null;
-        }
-    
-        const word = document.getText(wordRange);
-        const text = document.getText();
-        const lines = text.split('\n');
-    
-        const namespaceStack: string[] = [];
-        let currentNamespace = '';
-    
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
-    
-            // Check for namespace declarations specifically for object literals
-            const namespaceMatch = line.match(/(\w+(?:\.\w+)*)\s*=\s*{(?![^}]*};)/);
-            if (namespaceMatch) {
-                currentNamespace = namespaceMatch[1];
-                namespaceStack.push(currentNamespace);
-            }
-    
-            // Check for opening braces only in the context of an object literal
-            if (line.includes('{')) {
-                if (!namespaceMatch) {
-                    namespaceStack.push('{');
-                }
-            }
-    
-            // Check for closing braces
-            if (line.includes('}')) {
-                const lastEntry = namespaceStack.pop();
-                if (lastEntry !== '{') {
-                    currentNamespace = namespaceStack.length > 0 ? namespaceStack[namespaceStack.length - 1] : '';
-                }
-            }
-    
-            // Check if the line contains the word as a function definition
-            const functionDefMatch = line.match(new RegExp(`\\b${word}\\s*:\\s*function\\s*\\(`));
-            if (functionDefMatch && i === position.line) {
-                console.log(`Found function definition: ${word} in namespace: ${currentNamespace}`);
-                return { namespace: currentNamespace, functionName: word };
-            }
-        }
-        console.log('No function definition found at cursor position.');
-        return null;
-    }
-    
-    async function findReferencesInWorkspace(namespace: string, functionName: string) {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-    
-        if (!workspaceFolders) {
-            vscode.window.showWarningMessage('No workspace folder open');
-            return;
-        }
-    
-        const references: vscode.Location[] = [];
-    
-        for (const folder of workspaceFolders) {
-            const excludePattern = '{**/node_modules/**,temp/*,**/temp/**,**/build/**,**/release/**,**/Release/**,**/debug/**,**/Debug/**,**/simulator/**,**/*.d.ts,**/*.min.js,**/*.asm.js}';
-            const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*.{js,ts}'), excludePattern);
-    
-            for (const file of files) {
-                const document = await vscode.workspace.openTextDocument(file);
-                const text = document.getText();
-                const lines = text.split('\n');
-    
-                const specificCallRegex = new RegExp(`\\b${namespace}\\.${functionName}\\s*\\(`);
-                lines.forEach((line, lineNumber) => {
-                    if (specificCallRegex.test(line)) {
-                        const index = line.indexOf(`${namespace}.${functionName}`);
-                        if (index !== -1) {
-                            references.push(new vscode.Location(file, new vscode.Position(lineNumber, index)));
-                        }
-                    }
-                });
-            }
-        }
-    
-        if (references.length > 0) {
-            savedReferences = references; // Save references globally
-            savedItems = await Promise.all(references.map(async ref => {
-                const document = await vscode.workspace.openTextDocument(ref.uri);
-                const lines = document.getText().split('\n');
-                const relativePath = vscode.workspace.asRelativePath(ref.uri.fsPath);
-                const lineContent = ref.range.start.line;
-                return {
-                    label: `${relativePath} - Line ${lineContent + 1}`,
-                    description: lines[lineContent].trim(),
-                    location: ref
-                };
-            }));
-            showQuickPick(savedItems, namespace, functionName);
-        } else {
-            vscode.window.showInformationMessage(`No references found for ${namespace}.${functionName}.`);
-        }
-    }
-
-    function showQuickPick(items: (vscode.QuickPickItem & { location: vscode.Location })[], namespace: string, functionName: string) {
-        const quickPick = vscode.window.createQuickPick();
-        quickPick.items = items;
-        quickPick.placeholder = `Found ${items.length} references to ${namespace}.${functionName}.`;
-    
-        quickPick.onDidChangeSelection(async selection => {
-            if (selection[0]) {
-                const selectedItem = selection[0] as vscode.QuickPickItem & { location: vscode.Location };
-                const document = await vscode.workspace.openTextDocument(selectedItem.location.uri);
-                const editor = await vscode.window.showTextDocument(document);
-                editor.revealRange(selectedItem.location.range, vscode.TextEditorRevealType.InCenter);
-                editor.selection = new vscode.Selection(selectedItem.location.range.start, selectedItem.location.range.end);
-
-                if (savedItems.length > 0) {
-                    showQuickPick(savedItems, 'Saved', 'References');
-                } else {
-                    vscode.window.showInformationMessage('No saved references to display.');
-                }
-
-            }
-        });
-    
-        quickPick.onDidHide(() => quickPick.dispose());
-        quickPick.show();
-    }
+   
 
     const findReferencesCommand = vscode.commands.registerCommand('cocos.findReferences', async () => {
         const editor = vscode.window.activeTextEditor;
